@@ -1,0 +1,108 @@
+<div class="container">
+  <div class="row">
+    <div class="col-7">
+      <header>
+        <h1>Whisper ASR audio transcription</h1>
+        <h5 class="mt-4 form-text">Hit the record button to start recording audio.</h5>
+        <h5 class="form-text">Listen to the recording in audio player before uploading.</h5>
+      </header>
+
+      <div *ngIf="!processing; else spin">
+        <div class="row mt-5">
+          <div class="col-2">
+            <button *ngIf="!isRecording; else stopBtn" class="badge border ms-2 rounded-4" (click)="startRecording()" title="Start recording audio">
+              <i class="fa fa-circle fa-4x" style="color:rgb(209, 0, 0);"></i></button>
+          </div>
+          <ng-template #stopBtn>
+            <div class="col-2">
+              <button class="badge border ms-2 rounded-4" (click)="stopRecording()" title="Stop recording audio">
+                <i class="fa fa-stop-circle-o fa-4x" style="color:rgb(209, 0, 0);"></i></button>
+            </div>
+          </ng-template>
+          <div class="col-2">
+            <button [attr.disabled]="isClearBtnDisabled ? true : null" class="badge border ms-2 rounded-4" (click)="clearRecording()" title="Clear audio">
+              <i class="fa fa-remove fa-4x" [style.color]="!isClearBtnDisabled?'rgb(209, 0, 0)':'lightgray'"></i></button>
+          </div>
+          <div class="col-2">
+            <button [attr.disabled]="isTranscribeBtnDisabled ? true : null" class="badge border ms-2 rounded-4" (click)="transcribeAudio()" title="Transcribe audio">
+              <i class="fa fa-pencil-square-o fa-4x" [style.color]="!isTranscribeBtnDisabled?'blue':'lightgray'"></i></button>
+          </div>
+          <div class="col-2">
+            <button [attr.disabled]="isCompletionBtnDisabled ? true : null" class="badge border ms-2 rounded-4" (click)="completionProcess()" title="Process transcription">
+              <i class="fa fa-gears fa-4x" [style.color]="!isCompletionBtnDisabled?'blue':'lightgray'"></i></button>
+          </div>
+          <!-- <div class="col-9 text-muted" *ngIf="recordedAudio && !isRecording">
+            <h5>Hit the cross button to delete the recording.</h5>
+            <h5>Hit the upload button to start transcribing audio.</h5>
+          </div> -->
+        </div>
+
+        <div class="mt-3">
+          <!--for record-->
+          <audio #recorder id="recorder" muted hidden></audio>
+          <!--for play the audio-->
+          <audio #player controls></audio>
+        </div>
+      </div>
+      <ng-template #spin>
+        <div class="ms-5 mt-5">
+          <i class="fa fa-spinner fa-spin fa-5x" style="color:rgba(1, 1, 37, 0.904);"></i>
+        </div>
+      </ng-template>
+
+      <div class="mt-2">
+        <div *ngIf="lastTranscription">
+          <label style="font-style: italic;">
+            <b>Last Transcription: </b>
+            {{ lastTranscription }}</label>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <!-- <input class="form-control form-control-sm" type="file" accept="audio/*" (change)="handleFileUpload($event)" /> -->
+        <!-- <button [disabled]="!file" (click)="transcribeAudio()">Transcribe Audio</button> -->
+        <div *ngIf="transcription">
+          <h3 style="color:rgb(8, 97, 8);font-family: monospace;">{{ transcription }}</h3>
+        </div>
+      </div>
+    </div>
+    <div class="col-5 mt-2">
+      <div class="row border border-primary border-2 overflow-scroll d-block" style="height: 300px;">
+        <div class="col-12 bg-light text-center text-uppercase" style="font-weight: 800;">
+          <label class="col-form-label-lg">Cart items </label>
+        </div>
+        <div class="col-12" *ngFor="let product of selectedProducts;let i=index">
+          <div class="row">
+            <div class="col-1 ps-3 text-bg-warning mt-2 font-monospace">
+              {{ i + 1 + '.' }}
+            </div>
+            <div class="col-7 ps-3 text-bg-primary mt-2 font-monospace">
+              {{ product.name }}
+            </div>
+            <div class="col-2 text-bg-secondary font-monospace mt-2 text-end">
+              {{ product.quantity }}
+            </div>
+            <div class="col-2 text-bg-secondary font-monospace mt-2">
+              {{ product.unit }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- <div class="row mt-2">
+        <button class="border ms-2 rounded-4" (click)="addProduct('Pineapple', 400, 'pc')">
+          Add dummy product
+        </button>
+      </div> -->
+
+      <div class="row mt-2">
+        <h5 class="col-form-label-sm mb-0 text-bg-info text-sm-center text-uppercase">Available Items</h5>
+        <ul class="list-group-item-info list-unstyled">
+          <li *ngFor="let productName of allProductsList">
+            {{ productName }}
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
