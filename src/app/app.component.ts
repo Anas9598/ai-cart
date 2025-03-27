@@ -1,10 +1,11 @@
-import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import { Component, ElementRef, NgZone, OnInit, ViewChild } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 
 import OpenAI from 'openai';
 
 import { ISelectedProduct, MeasureUnits } from './app-model';
 import { products } from './product-list';
+import audioBufferToWav from 'audiobuffer-to-wav';
 
 @Component({
   selector: 'app-root',
@@ -12,11 +13,16 @@ import { products } from './product-list';
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent implements OnInit {
-  file: any;
-  transcription: string | undefined;
-  lastTranscription: string | undefined;
+  private readonly useAzureAI: boolean = true;
 
-  // apiKey = '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';
+  file: any;
+  recorderRef!: HTMLAudioElement;
+  playerRef!: HTMLAudioElement;
+  isRecording = false;
+  chunks: any[] = [];
+  mediaRecorder!: MediaRecorder;
+  stream!: MediaStream | null;
+  recordedAudioBlob!: Blob;
 
   @ViewChild('recorder', { read: ElementRef })
   set recorder(element: ElementRef) {
@@ -29,47 +35,50 @@ export class AppComponent implements OnInit {
 
   openai!: OpenAI;
 
-  processing = false;
-
-  recorderRef!: HTMLAudioElement;
-  playerRef!: HTMLAudioElement;
-  isRecording = false;
-  chunks: any[] = [];
-  mediaRecorder!: MediaRecorder;
-  stream!: MediaStream | null;
-  recordedAudio!: Blob | null;
-
   selectedProducts: ISelectedProduct[] = [];
   totalProducts = products;
+
+  transcription: string | undefined;
+  lastTranscription: string | undefined;
+  processing = false;
 
   get allProductsList() {
     return this.totalProducts && this.totalProducts.map(p => p.name);
   }
 
   get isClearBtnDisabled(): boolean {
-    return !this.recordedAudio || this.isRecording;
+    // return !this.recordedAudioBlob || this.isRecording;
+    return (!this.chunks || this.chunks.length == 0) || this.isRecording;
   }
 
   get isTranscribeBtnDisabled(): boolean {
-    return !this.recordedAudio || this.isRecording;
+    // return !this.recordedAudioBlob || this.isRecording;
+    return (!this.chunks || this.chunks.length == 0) || this.isRecording;
   }
 
   get isCompletionBtnDisabled(): boolean {
     return !this.transcription;
   }
 
-  constructor(private http: HttpClient) {
-    import('src/assets/api-key').then(m => {
-      this.openai = new OpenAI({
-        apiKey: m.getApiKey().split('@$!;').join(''), // Using split to avoid API key leak on hosting app.
-        dangerouslyAllowBrowser: true
-      });
-    })
+  get useOpenAI(): boolean {
+    return !this.useAzureAI;
+  }
 
+  constructor(private http: HttpClient, private ngZone: NgZone) {
+    if (this.useOpenAI) {
+      import('src/assets/api-key').then(m => {
+        this.openai = new OpenAI({
+          apiKey: m.getApiKey().split('@$!;').join(''), // Using split to avoid API key leak on hosting app.
+          dangerouslyAllowBrowser: true
+        });
+      });
+    }
   }
 
   ngOnInit(): void {
   }
+
+  //#region  Media related methods
 
   startRecording() {
     if (this.isRecording) {
@@ -82,7 +91,7 @@ export class AppComponent implements OnInit {
     }
 
     navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then((mediaStreamObj: MediaStream) => {
-      this.handleSuccess(mediaStreamObj);
+      this.record(mediaStreamObj);
     }).catch((err) => {
       console.error(err.name, err.message);
     });
@@ -103,9 +112,9 @@ export class AppComponent implements OnInit {
     }
 
     setTimeout(() => {
-      if (this.recordedAudio) {
-        this.file = new File([this.recordedAudio], 'audio.mp3', {
-          type: this.recordedAudio.type,
+      if (this.recordedAudioBlob) {
+        this.file = new File([this.recordedAudioBlob], 'audio.wav', {
+          type: this.recordedAudioBlob.type,
         });
       }
     }, 0);
@@ -113,7 +122,6 @@ export class AppComponent implements OnInit {
 
   clearRecording() {
     this.chunks = [];
-    this.recordedAudio = null;
     if (this.playerRef) {
       this.playerRef.src = '';
     }
@@ -122,7 +130,7 @@ export class AppComponent implements OnInit {
     this.stream = null;
   }
 
-  private handleSuccess(stream: MediaStream) {
+  private record(stream: MediaStream) {
     this.stream = stream;
     this.stream.addEventListener('oninactive', () => {
       console.log("Stream ended!")
@@ -140,21 +148,29 @@ export class AppComponent implements OnInit {
 
     // Convert the audio data in to blob
     // after stopping the recording
-    this.mediaRecorder.onstop = (ev) => this.onMediaRecorderStop(ev);
+    this.mediaRecorder.onstop = async (ev) => await this.onMediaRecorderStop(ev);
 
     this.mediaRecorder.start();
   }
 
-  private onMediaRecorderStop(ev: any) {
+  private async onMediaRecorderStop(ev: any) {
 
     // blob of type mp3
-    this.recordedAudio = new Blob(this.chunks, { 'type': 'audio/mp3;' });
+    // this.recordedAudioBlob = new Blob(this.chunks, { 'type': 'audio/mp3;' });
+    // this.recordedAudioBlob = new Blob(this.chunks, { 'type': 'audio/wav;' });
+
+    const audioBlob = new Blob(this.chunks, { 'type': 'audio/wav;' });
+    const recordedAudio = await this.convertTo16kHz16bitMonoPCM(audioBlob);
+    this.ngZone.run(_ => {
+      this.recordedAudioBlob = recordedAudio;
+    });
 
     this.chunks = [];
 
     // Creating audio url with reference
     // of created blob named 'audioData'
-    let audioSrc = window.URL.createObjectURL(this.recordedAudio);
+    // let audioSrc = window.URL.createObjectURL(this.recordedAudioBlob);
+    let audioSrc = window.URL.createObjectURL(audioBlob);
 
     // Pass the audio url to the 2nd video tag
     if (this.playerRef) {
@@ -164,24 +180,83 @@ export class AppComponent implements OnInit {
     this.stream?.getAudioTracks().forEach(track => track.stop());
     this.stream = null;
   }
+  
+  private trimAudioBuffer(buffer: AudioBuffer): AudioBuffer {
+    const rawData = buffer.getChannelData(0);
+    const threshold = 0.025; // Adjust as needed
+    let startOffset = 0;
+    let endOffset = rawData.length - 1;
 
-  transcribeAudio() {
-    this.processing = true;
-    this.lastTranscription = this.transcription || this.lastTranscription;
-    this.transcription = '';
-    this.openai.audio.transcriptions.create({
-      file: this.file,
-      model: "whisper-1",
-    }).then(value => {
-      this.transcription = value.text;
-      this.processing = false;
-      this.clearRecording();
-    }, err => {
-      this.processing = false;
-      console.error(err);
+    // Find the first non-silent sample
+    while (Math.abs(rawData[startOffset]) < threshold && startOffset < rawData.length) {
+      startOffset++;
+    }
+
+    // Find the last non-silent sample
+    while (Math.abs(rawData[endOffset]) < threshold && endOffset >= 0) {
+      endOffset--;
+    }
+
+    // Calculate the length of the trimmed buffer
+    const trimmedLength = endOffset - startOffset + 1;
+
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const trimmedBuffer = audioCtx.createBuffer(
+      buffer.numberOfChannels,
+      trimmedLength,
+      buffer.sampleRate
+    );
+
+    // Copy the non-silent samples to the new buffer
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      const channelData = buffer.getChannelData(channel);
+      const trimmedChannelData = trimmedBuffer.getChannelData(channel);
+      for (let i = 0; i < trimmedLength; i++) {
+        trimmedChannelData[i] = channelData[startOffset + i];
+      }
+    }
+
+    return trimmedBuffer;
+  }
+
+  private convertTo16kHz16bitMonoPCM(blob: Blob): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const arrayBuffer = reader.result as ArrayBuffer;
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioCtx.decodeAudioData(arrayBuffer, async (audioBuffer) => {
+          // Trim the audio buffer to remove trailing silence
+          const trimmedBuffer = this.trimAudioBuffer(audioBuffer);
+
+          const offlineCtx = new OfflineAudioContext(1, trimmedBuffer.length, 16000);
+          const source = offlineCtx.createBufferSource();
+          source.buffer = trimmedBuffer;
+          source.connect(offlineCtx.destination);
+          source.start(0);
+          offlineCtx.oncomplete = (e) => {
+            const renderedBuffer = e.renderedBuffer;
+            const wavBuffer = audioBufferToWav(renderedBuffer);
+            resolve(new Blob([wavBuffer], { type: 'audio/wav' }));
+          };
+          // offlineCtx.startRendering().then((renderedBuffer) => {
+          //   const wavBuffer = this.audioToWav(renderedBuffer);
+          //   resolve(new Blob([wavBuffer], { type: 'audio/wav' }));
+          // });
+          await offlineCtx.startRendering();
+        }, reject);
+      };
+      reader.readAsArrayBuffer(blob);
     });
   }
 
+  // Function to convert audio buffer to WAV format
+  private audioToWav(buffer: AudioBuffer): ArrayBuffer {
+    // Code to convert AudioBuffer to WAV format (16kHz, 16-bit, mono PCM)
+    const wavBuffer = audioBufferToWav(buffer);
+    return wavBuffer;
+  }
+  
   // When using file upload control in html.
   handleFileUpload(ev: any) {
     this.lastTranscription = this.transcription;
@@ -189,7 +264,84 @@ export class AppComponent implements OnInit {
     this.file = ev.dataTransfer ? ev.dataTransfer.files[0] : ev.target.files[0];
   }
 
-  functions = [
+  //#endregion
+
+  //#region AI Operations
+  transcribeAudio() {
+    if (this.useAzureAI) {
+      this.azTranscribeAudio();
+    } else {
+      this.openAITranscribeAudio();
+    }
+  }
+  completionProcess() {
+    if (this.useAzureAI) {
+      this.azCompletionProcess();
+    } else {
+      this.openAICompletionProcess();
+    }
+  }
+  //#endregion
+
+  //#region Azure AI Service Operations
+  private azTranscribeAudio() {
+    this.processing = true;
+    this.lastTranscription = this.transcription || this.lastTranscription;
+    this.transcription = '';
+    const formData = new FormData();
+    formData.append("formFile", this.recordedAudioBlob, 'audio.wav');
+
+    this.http.post('api/AzureAI/GetText', formData).subscribe({
+      next: (data: any) => {
+        this.processing = false;
+        this.transcription = data.text;
+        this.clearRecording();
+      },
+      error: err => {
+        console.error(err);
+        this.processing = false;
+      }
+    });
+  }
+  private azCompletionProcess() {
+    this.processing = true;
+    this.http.post('api/AzureAI/ProcessTranscript/', {promptMessage: this.transcription}).subscribe({
+      next: (data: any) => {
+        if (data.status == 'success' && data.tools instanceof Array) {
+          (data.tools as Array<{process: string, args: string}>).forEach(t => {
+            let args = null;
+            try {
+              if (t.args) {
+                args = JSON.parse(t.args);
+              }
+            }
+            catch {}
+  
+            if (args && t.process) {
+              this.initiateCartOperation(t.process, args);
+            }            
+          })
+
+          console.log(data);
+        } else {
+          alert('Can you please provide more information or clarify your request?');
+        }
+
+        this.processing = false;
+        this.lastTranscription = this.transcription || this.lastTranscription;
+        // this.transcription = '';
+      },
+      error: err => {
+        this.processing = false;
+        console.error(err);
+        alert(`There was an error on completions API.`);
+      }
+    });    
+  }
+  //#endregion
+
+  //#region Open AI Operations
+  private openAIFunctions = [
     {
       "name": "addProduct",
       "description": "Add given product to the cart from the list of available products.",
@@ -251,9 +403,26 @@ export class AppComponent implements OnInit {
         "properties": {}
       }
     }
-  ]
+  ]  
 
-  completionProcess() {
+  openAITranscribeAudio() {
+    this.processing = true;
+    this.lastTranscription = this.transcription || this.lastTranscription;
+    this.transcription = '';
+    this.openai.audio.transcriptions.create({
+      file: this.file,
+      model: "whisper-1",
+    }).then(value => {
+      this.transcription = value.text;
+      this.processing = false;
+      this.clearRecording();
+    }, err => {
+      this.processing = false;
+      console.error(err);
+    });
+  }
+
+  openAICompletionProcess() {
     const messages = [{ role: "user", content: `Call a required function from this prompt:: ${this.transcription}` }] as any;
     this.lastTranscription = this.transcription || this.lastTranscription;
     this.transcription = '';
@@ -261,7 +430,7 @@ export class AppComponent implements OnInit {
     this.openai.chat.completions.create({
       messages: messages,
       model: "gpt-3.5-turbo-0613",
-      functions: this.functions,
+      functions: this.openAIFunctions,
       function_call: "auto"
     }).then((response: any) => {
       this.processing = false;
@@ -274,23 +443,8 @@ export class AppComponent implements OnInit {
         catch {
         }
 
-        switch (responseMessage.function_call.name) {
-          case "addProduct":
-            this.addProduct(funcArgs.name, funcArgs.quantity, funcArgs.unit);
-            break;
-          case "removeProduct":
-            this.removeProduct(funcArgs.name);
-            break;
-          case "updateQuantity":
-            this.updateQuantity(funcArgs.name, funcArgs.quantity);
-            break;
-          case "clearCart":
-            this.clearCart();
-            break;
-          default:
-            alert(`There is no function to call with name: ${responseMessage.function_call.name}`);
-            break;
-        }
+        this.initiateCartOperation(responseMessage.function_call.name, funcArgs);
+
       } else {
         alert('Can you please provide more information or clarify your request?');
         console.error(responseMessage.content);
@@ -301,8 +455,10 @@ export class AppComponent implements OnInit {
       alert(`There was an error on completions API.`);
     });
   }
+  //#endregion
 
-  addProduct(name: string, quantity: number, unit?: string) {
+  //#region Cart related methods
+  private addProduct(name: string, quantity: number, unit?: string) {
     const selectedProduct = this.totalProducts.find(p => p.name.toLowerCase() == name.trim().toLowerCase());
     if (selectedProduct) {
       if (this.selectedProducts.find(p => p.name.toLowerCase() == selectedProduct.name.trim().toLowerCase())) {
@@ -320,7 +476,7 @@ export class AppComponent implements OnInit {
     }
   }
 
-  removeProduct(name: string) {
+  private removeProduct(name: string) {
     if (this.selectedProducts.some((s: ISelectedProduct) => s.name.toLowerCase() == name.trim().toLowerCase())) {
       this.selectedProducts = this.selectedProducts.filter((s: ISelectedProduct) => s.name.toLowerCase() != name.trim().toLowerCase());
     } else {
@@ -328,7 +484,7 @@ export class AppComponent implements OnInit {
     }
   }
 
-  updateQuantity(name: string, quantity: number) {
+  private updateQuantity(name: string, quantity: number) {
     const product = this.selectedProducts.find(p => p.name.toLowerCase() == name.trim().toLowerCase());
     if (product) {
       product.quantity = quantity;
@@ -337,7 +493,30 @@ export class AppComponent implements OnInit {
     }
   }
 
-  clearCart() {
+  private clearCart() {
     this.selectedProducts = [];
   }
+
+  private initiateCartOperation(name: string, args: any) {
+    switch (name) {
+      case "addProduct":
+        this.addProduct(args.name, args.quantity, args.unit);
+        break;
+      case "removeProduct":
+        this.removeProduct(args.name);
+        break;
+      case "updateQuantity":
+        this.updateQuantity(args.name, args.quantity);
+        break;
+      case "clearCart":
+        this.clearCart();
+        break;
+      default:
+        alert(`There is no function to call with name: ${name}`);
+        break;
+    }
+  }
+
+  //#endregion
+
 }

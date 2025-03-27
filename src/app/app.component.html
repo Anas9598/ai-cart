@@ -1,33 +1,33 @@
 <div class="container">
   <div class="row">
-    <div class="col-7">
+    <div class="col-xl-7 col-12">
       <header>
-        <h1>Whisper ASR audio transcription</h1>
+        <h1>AI Cart</h1>
         <h5 class="mt-4 form-text">Hit the record button to start recording audio.</h5>
         <h5 class="form-text">Listen to the recording in audio player before uploading.</h5>
       </header>
 
       <div *ngIf="!processing; else spin">
         <div class="row mt-5">
-          <div class="col-2">
+          <div class="col-xl-2 col-3">
             <button *ngIf="!isRecording; else stopBtn" class="badge border ms-2 rounded-4" (click)="startRecording()" title="Start recording audio">
               <i class="fa fa-circle fa-4x" style="color:rgb(209, 0, 0);"></i></button>
           </div>
           <ng-template #stopBtn>
-            <div class="col-2">
+            <div class="col-xl-2 col-3">
               <button class="badge border ms-2 rounded-4" (click)="stopRecording()" title="Stop recording audio">
                 <i class="fa fa-stop-circle-o fa-4x" style="color:rgb(209, 0, 0);"></i></button>
             </div>
           </ng-template>
-          <div class="col-2">
+          <div class="col-xl-2 col-3">
             <button [attr.disabled]="isClearBtnDisabled ? true : null" class="badge border ms-2 rounded-4" (click)="clearRecording()" title="Clear audio">
               <i class="fa fa-remove fa-4x" [style.color]="!isClearBtnDisabled?'rgb(209, 0, 0)':'lightgray'"></i></button>
           </div>
-          <div class="col-2">
+          <div class="col-xl-2 col-3">
             <button [attr.disabled]="isTranscribeBtnDisabled ? true : null" class="badge border ms-2 rounded-4" (click)="transcribeAudio()" title="Transcribe audio">
               <i class="fa fa-pencil-square-o fa-4x" [style.color]="!isTranscribeBtnDisabled?'blue':'lightgray'"></i></button>
           </div>
-          <div class="col-2">
+          <div class="col-xl-2 col-3">
             <button [attr.disabled]="isCompletionBtnDisabled ? true : null" class="badge border ms-2 rounded-4" (click)="completionProcess()" title="Process transcription">
               <i class="fa fa-gears fa-4x" [style.color]="!isCompletionBtnDisabled?'blue':'lightgray'"></i></button>
           </div>
@@ -41,7 +41,7 @@
           <!--for record-->
           <audio #recorder id="recorder" muted hidden></audio>
           <!--for play the audio-->
-          <audio #player controls></audio>
+          <audio #player controls class="w-100"></audio>
         </div>
       </div>
       <ng-template #spin>
@@ -66,7 +66,7 @@
         </div>
       </div>
     </div>
-    <div class="col-5 mt-2">
+    <div class="col-xl-5 col-12 mt-2">
       <div class="row border border-primary border-2 overflow-scroll d-block" style="height: 300px;">
         <div class="col-12 bg-light text-center text-uppercase" style="font-weight: 800;">
           <label class="col-form-label-lg">Cart items </label>
